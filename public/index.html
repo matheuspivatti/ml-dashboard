@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ML Dashboard — 2X Brasil</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg: #0f1117;
+      --card: #1a1d27;
+      --border: #2a2d3a;
+      --text: #e4e4e7;
+      --muted: #9ca3af;
+      --accent: #ffe600;
+      --green: #22c55e;
+      --red: #ef4444;
+      --blue: #3b82f6;
+    }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 24px 16px; }
+
+    header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 32px; }
+    header h1 { font-size: 24px; font-weight: 700; }
+    header h1 span { color: var(--accent); }
+    .refresh-btn { background: var(--card); border: 1px solid var(--border); color: var(--text); padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+    .refresh-btn:hover { border-color: var(--accent); }
+
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 32px; }
+    .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+    .stat-card .label { font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+    .stat-card .value { font-size: 28px; font-weight: 700; }
+    .stat-card .value.green { color: var(--green); }
+    .stat-card .value.accent { color: var(--accent); }
+    .stat-card .value.blue { color: var(--blue); }
+
+    .tabs { display: flex; gap: 8px; margin-bottom: 24px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+    .tab { background: none; border: none; color: var(--muted); padding: 8px 16px; cursor: pointer; font-size: 14px; border-radius: 8px 8px 0 0; }
+    .tab.active { color: var(--accent); background: var(--card); }
+    .tab:hover { color: var(--text); }
+
+    .section { background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+    .section-header { padding: 16px 20px; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 16px; }
+
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; padding: 12px 20px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid var(--border); }
+    td { padding: 12px 20px; border-bottom: 1px solid var(--border); font-size: 14px; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover { background: rgba(255, 230, 0, 0.03); }
+
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
+    .badge.active { background: rgba(34,197,94,0.15); color: var(--green); }
+    .badge.paused { background: rgba(239,68,68,0.15); color: var(--red); }
+    .badge.paid { background: rgba(34,197,94,0.15); color: var(--green); }
+
+    .thumb { width: 48px; height: 48px; object-fit: cover; border-radius: 6px; }
+
+    .loading { text-align: center; padding: 60px; color: var(--muted); }
+    .loading .spinner { display: inline-block; width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 12px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .error { text-align: center; padding: 40px; color: var(--red); }
+
+    .seller-info { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; padding: 16px 20px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; }
+    .seller-info .name { font-weight: 700; font-size: 18px; }
+    .seller-info .rep { color: var(--muted); font-size: 13px; }
+
+    @media (max-width: 640px) {
+      .stats { grid-template-columns: repeat(2, 1fr); }
+      .container { padding: 16px 8px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1><span>2X</span> Mercado Livre</h1>
+      <button class="refresh-btn" onclick="loadData()">↻ Atualizar</button>
+    </header>
+
+    <div id="seller" class="seller-info" style="display:none;"></div>
+
+    <div class="stats" id="stats">
+      <div class="stat-card"><div class="label">Anúncios Ativos</div><div class="value accent" id="s-listings">—</div></div>
+      <div class="stat-card"><div class="label">Vendas (total)</div><div class="value green" id="s-orders">—</div></div>
+      <div class="stat-card"><div class="label">Faturamento Recente</div><div class="value green" id="s-revenue">—</div></div>
+      <div class="stat-card"><div class="label">Reputação</div><div class="value blue" id="s-rep">—</div></div>
+    </div>
+
+    <div class="tabs">
+      <button class="tab active" data-tab="orders" onclick="switchTab('orders')">Vendas Recentes</button>
+      <button class="tab" data-tab="listings" onclick="switchTab('listings')">Anúncios</button>
+    </div>
+
+    <div id="content">
+      <div class="loading"><div class="spinner"></div><br>Carregando dados...</div>
+    </div>
+  </div>
+
+  <script>
+    let data = null;
+    let currentTab = 'orders';
+
+    function fmt(v, currency = 'BRL') {
+      return new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(v);
+    }
+
+    function fmtDate(d) {
+      return new Date(d).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
+    }
+
+    function switchTab(tab) {
+      currentTab = tab;
+      document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+      render();
+    }
+
+    function render() {
+      if (!data) return;
+      const el = document.getElementById('content');
+
+      if (currentTab === 'orders') {
+        const rows = (data.orders.recent || []).map(o => `
+          <tr>
+            <td>${fmtDate(o.date)}</td>
+            <td>${o.items?.map(i => i.title).join(', ') || '—'}</td>
+            <td>${o.buyer || '—'}</td>
+            <td>${fmt(o.total, o.currency)}</td>
+            <td><span class="badge ${o.status === 'paid' ? 'paid' : ''}">${o.status}</span></td>
+          </tr>
+        `).join('');
+        el.innerHTML = `
+          <div class="section">
+            <table>
+              <thead><tr><th>Data</th><th>Produto</th><th>Comprador</th><th>Valor</th><th>Status</th></tr></thead>
+              <tbody>${rows || '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:40px;">Nenhuma venda recente</td></tr>'}</tbody>
+            </table>
+          </div>`;
+      } else {
+        const rows = (data.listings.items || []).map(l => `
+          <tr>
+            <td><img class="thumb" src="${l.thumbnail}" alt="" onerror="this.style.display='none'"></td>
+            <td><a href="${l.permalink}" target="_blank" style="color:var(--text);text-decoration:none;">${l.title}</a></td>
+            <td>${fmt(l.price, l.currency)}</td>
+            <td>${l.available_quantity}</td>
+            <td>${l.sold_quantity}</td>
+            <td><span class="badge ${l.status === 'active' ? 'active' : 'paused'}">${l.status}</span></td>
+          </tr>
+        `).join('');
+        el.innerHTML = `
+          <div class="section">
+            <table>
+              <thead><tr><th></th><th>Produto</th><th>Preço</th><th>Estoque</th><th>Vendidos</th><th>Status</th></tr></thead>
+              <tbody>${rows || '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:40px;">Nenhum anúncio</td></tr>'}</tbody>
+            </table>
+          </div>`;
+      }
+    }
+
+    async function loadData() {
+      const el = document.getElementById('content');
+      el.innerHTML = '<div class="loading"><div class="spinner"></div><br>Carregando dados...</div>';
+
+      try {
+        const res = await fetch('/api/summary');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        data = await res.json();
+
+        // Seller info
+        const sellerEl = document.getElementById('seller');
+        sellerEl.style.display = 'flex';
+        sellerEl.innerHTML = `
+          <div>
+            <div class="name">${data.seller.nickname}</div>
+            <div class="rep">Seller ID: ${data.seller.id}</div>
+          </div>`;
+
+        // Stats
+        document.getElementById('s-listings').textContent = data.listings.total;
+        document.getElementById('s-orders').textContent = data.orders.total;
+
+        const revenue = (data.orders.recent || []).reduce((sum, o) => sum + (o.total || 0), 0);
+        document.getElementById('s-revenue').textContent = fmt(revenue);
+
+        const rep = data.seller.reputation;
+        if (rep?.level_id) {
+          document.getElementById('s-rep').textContent = rep.level_id.replace(/_/g, ' ');
+        }
+
+        render();
+      } catch (err) {
+        el.innerHTML = `<div class="error">Erro: ${err.message}</div>`;
+      }
+    }
+
+    loadData();
+  </script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "name": "ml-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "build": "echo 'no build step'"
+  },
+  "dependencies": {
+    "express": "^4.21.0"
+  }
+}
