@@ -129,7 +129,7 @@ app.get('/api/summary', async (req, res) => {
   try {
     const [seller, orders, items] = await Promise.all([
       mlFetch('/users/me'),
-      mlFetch('/orders/search?seller=me&sort=date_desc&limit=50'),
+      mlFetch('/orders/search?seller=2199171685&sort=date_desc&limit=50'),
       mlFetch('/users/2199171685/items/search?limit=50'),
     ]);
 
@@ -187,7 +187,7 @@ app.get('/api/summary', async (req, res) => {
 app.get('/api/orders', async (req, res) => {
   try {
     const { offset = 0, limit = 50, status } = req.query;
-    let path = `/orders/search?seller=me&sort=date_desc&offset=${offset}&limit=${limit}`;
+    let path = `/orders/search?seller=2199171685&sort=date_desc&offset=${offset}&limit=${limit}`;
     if (status) path += `&order.status=${status}`;
     res.json(await mlFetch(path));
   } catch (err) {
