@@ -135,9 +135,12 @@ app.get('/api/summary', async (req, res) => {
 
     let listings = [];
     if (items.results?.length) {
-      const ids = items.results.slice(0, 20).join(',');
-      const details = await mlFetch(`/items?ids=${ids}`);
-      listings = details.map(d => d.body).filter(Boolean);
+      // Buscar primeiros 20 itens em paralelo
+      const itemPromises = items.results.slice(0, 20).map(id => 
+        mlFetch(`/items/${id}`).catch(e => null)
+      );
+      const itemsData = await Promise.all(itemPromises);
+      listings = itemsData.filter(item => item && !item.error);
     }
 
     res.json({
@@ -198,16 +201,12 @@ app.get('/api/items', async (req, res) => {
     const { offset = 0, limit = 20 } = req.query; // Reduzido para 20 por performance
     const search = await mlFetch(`/users/2199171685/items/search?offset=${offset}&limit=${limit}`);
     if (search.results?.length) {
-      // Buscar detalhes um por um (batch /items?ids não funciona em serverless)
-      const items = [];
-      for (const itemId of search.results.slice(0, 20)) {
-        try {
-          const item = await mlFetch(`/items/${itemId}`);
-          if (item && !item.error) items.push(item);
-        } catch (e) {
-          console.error(`Erro ao buscar item ${itemId}:`, e.message);
-        }
-      }
+      // Buscar itens em paralelo (mais rápido)
+      const itemPromises = search.results.slice(0, 20).map(id => 
+        mlFetch(`/items/${id}`).catch(e => null)
+      );
+      const itemsData = await Promise.all(itemPromises);
+      const items = itemsData.filter(item => item && !item.error);
       res.json({ paging: search.paging, items });
     } else {
       res.json({ paging: search.paging, items: [] });
