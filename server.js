@@ -200,7 +200,9 @@ app.get('/api/items', async (req, res) => {
     if (search.results?.length) {
       const ids = search.results.join(',');
       const details = await mlFetch(`/items?ids=${ids}`);
-      res.json({ paging: search.paging, items: details.map(d => d.body).filter(Boolean) });
+      // Garantir que details é array
+      const itemsArray = Array.isArray(details) ? details : [];
+      res.json({ paging: search.paging, items: itemsArray.map(d => d.body).filter(Boolean) });
     } else {
       res.json({ paging: search.paging, items: [] });
     }
