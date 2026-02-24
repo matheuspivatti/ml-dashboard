@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Histórico ML — 2X Brasil</title>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    .timeline { margin-top: 24px; }
+    .timeline-item { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px 20px; margin-bottom: 12px; }
+    .timeline-item:hover { border-color: var(--accent); }
+    .timeline-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .timeline-date { font-size: 12px; color: var(--muted); }
+    .timeline-type { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
+    .timeline-type.preco { background: var(--blue); color: white; }
+    .timeline-type.titulo { background: var(--accent); color: var(--bg); }
+    .timeline-type.novo { background: var(--green); color: white; }
+    .timeline-type.categoria { background: var(--muted); color: white; }
+    .timeline-content { font-size: 14px; line-height: 1.6; }
+    .change-detail { display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: center; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+    .change-before, .change-after { font-size: 13px; }
+    .change-before { text-align: right; color: var(--red); text-decoration: line-through; }
+    .change-after { color: var(--green); font-weight: 600; }
+    .change-arrow { color: var(--muted); }
+    .filter-bar { display: flex; gap: 8px; margin-bottom: 16px; }
+    .filter-btn { background: var(--card); border: 1px solid var(--border); color: var(--text); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+    .filter-btn.active { border-color: var(--accent); background: var(--accent); color: var(--bg); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1><span>2X</span> Mercado Livre — Histórico</h1>
+      <div>
+        <button class="refresh-btn" onclick="window.location.href='/'">← Voltar</button>
+        <button class="refresh-btn" onclick="captureSnapshot()" style="margin-left: 8px;">📸 Capturar Agora</button>
+      </div>
+    </header>
+
+    <div class="stats">
+      <div class="stat-card">
+        <div class="label">Snapshots Capturados</div>
+        <div class="value accent" id="totalSnapshots">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Alterações Detectadas (7d)</div>
+        <div class="value blue" id="totalChanges">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Último Snapshot</div>
+        <div class="value" style="font-size: 16px;" id="lastSnapshot">-</div>
+      </div>
+    </div>
+
+    <div class="filter-bar">
+      <button class="filter-btn active" onclick="filterChanges('all')">Todas</button>
+      <button class="filter-btn" onclick="filterChanges('preco')">💰 Preço</button>
+      <button class="filter-btn" onclick="filterChanges('titulo')">✏️ Título</button>
+      <button class="filter-btn" onclick="filterChanges('novo')">✨ Novos</button>
+      <button class="filter-btn" onclick="filterChanges('categoria')">📁 Categoria</button>
+    </div>
+
+    <div class="timeline" id="timeline"></div>
+  </div>
+
+  <script>
+    let allChanges = [];
+    let currentFilter = 'all';
+
+    async function loadHistory() {
+      try {
+        const [snapshots, changes] = await Promise.all([
+          fetch('/api/history/snapshots').then(r => r.json()),
+          fetch('/api/history/changes?days=7').then(r => r.json())
+        ]);
+
+        document.getElementById('totalSnapshots').textContent = snapshots.length;
+        document.getElementById('totalChanges').textContent = changes.length;
+        
+        if (snapshots.length > 0) {
+          const last = new Date(snapshots[0].captured_at);
+          document.getElementById('lastSnapshot').textContent = last.toLocaleString('pt-BR');
+        }
+
+        allChanges = changes;
+        renderChanges(changes);
+      } catch (err) {
+        alert('Erro ao carregar histórico: ' + err.message);
+      }
+    }
+
+    function renderChanges(changes) {
+      const timeline = document.getElementById('timeline');
+      if (changes.length === 0) {
+        timeline.innerHTML = '<p style="text-align:center;color:var(--muted);padding:40px;">Nenhuma alteração detectada.</p>';
+        return;
+      }
+
+      timeline.innerHTML = changes.map(change => {
+        const date = new Date(change.detectado_em);
+        let content = '';
+
+        if (change.tipo === 'preco') {
+          content = `
+            <div class="change-detail">
+              <div class="change-before">R$ ${parseFloat(change.valor_anterior).toFixed(2)}</div>
+              <div class="change-arrow">→</div>
+              <div class="change-after">R$ ${parseFloat(change.valor_novo).toFixed(2)}</div>
+            </div>
+            <div style="margin-top:8px;font-size:12px;color:var(--muted);">
+              Variação: ${change.variacao_pct > 0 ? '+' : ''}${change.variacao_pct}% | 
+              Vendas antes: ${change.vendas_antes || 0} → depois: ${change.vendas_depois || 0}
+            </div>
+          `;
+        } else if (change.tipo === 'titulo') {
+          content = `
+            <div style="margin-top:8px;">
+              <div style="color:var(--red);text-decoration:line-through;margin-bottom:4px;font-size:13px;">${change.valor_anterior}</div>
+              <div style="color:var(--green);font-weight:600;font-size:13px;">${change.valor_novo}</div>
+            </div>
+          `;
+        } else if (change.tipo === 'novo') {
+          content = `<div style="margin-top:8px;font-weight:600;">${change.valor_novo}</div>`;
+        } else {
+          content = `
+            <div class="change-detail">
+              <div class="change-before">${change.valor_anterior}</div>
+              <div class="change-arrow">→</div>
+              <div class="change-after">${change.valor_novo}</div>
+            </div>
+          `;
+        }
+
+        return `
+          <div class="timeline-item" data-type="${change.tipo}">
+            <div class="timeline-header">
+              <span class="timeline-type ${change.tipo}">${change.tipo}</span>
+              <span class="timeline-date">${date.toLocaleString('pt-BR')}</span>
+            </div>
+            <div class="timeline-content">
+              <div style="font-weight:600;margin-bottom:4px;">Item: ${change.ml_item_id}</div>
+              ${content}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function filterChanges(type) {
+      currentFilter = type;
+      document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+      event.target.classList.add('active');
+
+      const filtered = type === 'all' ? allChanges : allChanges.filter(c => c.tipo === type);
+      renderChanges(filtered);
+    }
+
+    async function captureSnapshot() {
+      if (!confirm('Capturar snapshot agora? Isso pode levar alguns segundos.')) return;
+      
+      try {
+        const btn = event.target;
+        btn.disabled = true;
+        btn.textContent = '⏳ Capturando...';
+        
+        const result = await fetch('/api/history/capture', { method: 'POST' }).then(r => r.json());
+        alert(`✅ Snapshot capturado! ${result.itemCount} itens salvos.`);
+        loadHistory();
+        
+        btn.disabled = false;
+        btn.textContent = '📸 Capturar Agora';
+      } catch (err) {
+        alert('Erro ao capturar: ' + err.message);
+      }
+    }
+
+    loadHistory();
+  </script>
+</body>
+</html>

@@ -2,6 +2,7 @@ import express from 'express';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import db from './database.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -195,6 +196,89 @@ app.get('/api/items', async (req, res) => {
 app.get('/api/questions', async (req, res) => {
   try {
     res.json(await mlFetch('/my/received_questions/search?sort_fields=date_created&sort_types=DESC&limit=20'));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// API: History - Snapshots
+app.get('/api/history/snapshots', (req, res) => {
+  const snapshots = db.prepare('SELECT * FROM snapshots ORDER BY captured_at DESC LIMIT 30').all();
+  res.json(snapshots);
+});
+
+// API: History - Changes
+app.get('/api/history/changes', (req, res) => {
+  const { days = 7 } = req.query;
+  const changes = db.prepare(`
+    SELECT a.*, s.captured_at as snapshot_date
+    FROM alteracoes a
+    LEFT JOIN anuncios an ON a.ml_item_id = an.ml_item_id
+    LEFT JOIN snapshots s ON an.snapshot_id = s.id
+    WHERE a.detectado_em >= datetime('now', '-${days} days')
+    ORDER BY a.detectado_em DESC
+    LIMIT 100
+  `).all();
+  res.json(changes);
+});
+
+// API: History - Capture snapshot
+app.post('/api/history/capture', async (req, res) => {
+  try {
+    const items = await mlFetch('/users/me/items/search?limit=50');
+    let listings = [];
+    if (items.results?.length) {
+      const ids = items.results.join(',');
+      const details = await mlFetch(`/items?ids=${ids}`);
+      listings = details.map(d => d.body).filter(Boolean);
+    }
+    
+    const totalVendas = listings.reduce((sum, i) => sum + (i.sold_quantity || 0), 0);
+    const seller = await mlFetch('/users/me');
+    
+    const result = db.prepare(`
+      INSERT INTO snapshots (seller_id, total_anuncios, total_vendas, data)
+      VALUES (?, ?, ?, ?)
+    `).run(seller.id, listings.length, totalVendas, JSON.stringify(listings));
+    
+    const snapshotId = result.lastInsertRowid;
+    
+    for (const item of listings) {
+      db.prepare(`
+        INSERT INTO anuncios (snapshot_id, ml_item_id, titulo, preco, estoque, vendidos, categoria, status, thumbnail_url, data_completa)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        snapshotId, item.id, item.title, item.price, item.available_quantity,
+        item.sold_quantity, item.category_id, item.status, item.thumbnail, JSON.stringify(item)
+      );
+    }
+    
+    // Detect changes
+    const prevSnapshot = db.prepare('SELECT id FROM snapshots WHERE id < ? ORDER BY id DESC LIMIT 1').get(snapshotId);
+    if (prevSnapshot) {
+      const currentItems = db.prepare('SELECT * FROM anuncios WHERE snapshot_id = ?').all(snapshotId);
+      const prevItems = db.prepare('SELECT * FROM anuncios WHERE snapshot_id = ?').all(prevSnapshot.id);
+      const prevMap = new Map(prevItems.map(i => [i.ml_item_id, i]));
+      
+      for (const current of currentItems) {
+        const prev = prevMap.get(current.ml_item_id);
+        if (!prev) {
+          db.prepare('INSERT INTO alteracoes (ml_item_id, tipo, valor_novo) VALUES (?, ?, ?)').run(current.ml_item_id, 'novo', current.titulo);
+        } else {
+          if (Math.abs(current.preco - prev.preco) > 0.01) {
+            const variacao = ((current.preco - prev.preco) / prev.preco * 100).toFixed(2);
+            db.prepare('INSERT INTO alteracoes (ml_item_id, tipo, valor_anterior, valor_novo, variacao_pct, vendas_antes, vendas_depois) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+              current.ml_item_id, 'preco', prev.preco, current.preco, variacao, prev.vendidos, current.vendidos
+            );
+          }
+          if (current.titulo !== prev.titulo) {
+            db.prepare('INSERT INTO alteracoes (ml_item_id, tipo, valor_anterior, valor_novo) VALUES (?, ?, ?, ?)').run(current.ml_item_id, 'titulo', prev.titulo, current.titulo);
+          }
+        }
+      }
+    }
+    
+    res.json({ success: true, snapshotId, itemCount: listings.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
