@@ -130,7 +130,7 @@ app.get('/api/summary', async (req, res) => {
     const [seller, orders, items] = await Promise.all([
       mlFetch('/users/me'),
       mlFetch('/orders/search?seller=me&sort=date_desc&limit=50'),
-      mlFetch('/users/me/items/search?limit=50'),
+      mlFetch('/users/2199171685/items/search?limit=50'),
     ]);
 
     let listings = [];
@@ -196,7 +196,7 @@ app.get('/api/orders', async (req, res) => {
 app.get('/api/items', async (req, res) => {
   try {
     const { offset = 0, limit = 50 } = req.query;
-    const search = await mlFetch(`/users/me/items/search?offset=${offset}&limit=${limit}`);
+    const search = await mlFetch(`/users/2199171685/items/search?offset=${offset}&limit=${limit}`);
     if (search.results?.length) {
       const ids = search.results.join(',');
       const details = await mlFetch(`/items?ids=${ids}`);
@@ -245,7 +245,7 @@ app.get('/api/history/changes', (req, res) => {
 app.post('/api/history/capture', async (req, res) => {
   if (!db) return res.status(503).json({ error: 'Database not available in serverless environment' });
   try {
-    const items = await mlFetch('/users/me/items/search?limit=50');
+    const items = await mlFetch('/users/2199171685/items/search?limit=50');
     let listings = [];
     if (items.results?.length) {
       const ids = items.results.join(',');
