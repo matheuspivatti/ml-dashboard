@@ -2,7 +2,15 @@ import express from 'express';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import db from './database.js';
+
+// Banco SQLite - opcional (não funciona em Vercel serverless)
+let db = null;
+try {
+  const dbModule = await import('./database.js');
+  db = dbModule.default;
+} catch (err) {
+  console.warn('SQLite não disponível (ambiente serverless)');
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -203,12 +211,14 @@ app.get('/api/questions', async (req, res) => {
 
 // API: History - Snapshots
 app.get('/api/history/snapshots', (req, res) => {
+  if (!db) return res.status(503).json({ error: 'Database not available in serverless environment' });
   const snapshots = db.prepare('SELECT * FROM snapshots ORDER BY captured_at DESC LIMIT 30').all();
   res.json(snapshots);
 });
 
 // API: History - Changes
 app.get('/api/history/changes', (req, res) => {
+  if (!db) return res.status(503).json({ error: 'Database not available in serverless environment' });
   const { days = 7 } = req.query;
   const changes = db.prepare(`
     SELECT a.*, s.captured_at as snapshot_date
@@ -224,6 +234,7 @@ app.get('/api/history/changes', (req, res) => {
 
 // API: History - Capture snapshot
 app.post('/api/history/capture', async (req, res) => {
+  if (!db) return res.status(503).json({ error: 'Database not available in serverless environment' });
   try {
     const items = await mlFetch('/users/me/items/search?limit=50');
     let listings = [];
