@@ -195,14 +195,20 @@ app.get('/api/orders', async (req, res) => {
 // API: Items
 app.get('/api/items', async (req, res) => {
   try {
-    const { offset = 0, limit = 50 } = req.query;
+    const { offset = 0, limit = 20 } = req.query; // Reduzido para 20 por performance
     const search = await mlFetch(`/users/2199171685/items/search?offset=${offset}&limit=${limit}`);
     if (search.results?.length) {
-      const ids = search.results.join(',');
-      const details = await mlFetch(`/items?ids=${ids}`);
-      // Garantir que details é array
-      const itemsArray = Array.isArray(details) ? details : [];
-      res.json({ paging: search.paging, items: itemsArray.map(d => d.body).filter(Boolean) });
+      // Buscar detalhes um por um (batch /items?ids não funciona em serverless)
+      const items = [];
+      for (const itemId of search.results.slice(0, 20)) {
+        try {
+          const item = await mlFetch(`/items/${itemId}`);
+          if (item && !item.error) items.push(item);
+        } catch (e) {
+          console.error(`Erro ao buscar item ${itemId}:`, e.message);
+        }
+      }
+      res.json({ paging: search.paging, items });
     } else {
       res.json({ paging: search.paging, items: [] });
     }
