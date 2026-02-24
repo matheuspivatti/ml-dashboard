@@ -26,6 +26,15 @@ function ensureDataDir() {
 }
 
 function getTokens() {
+  // Priorizar variáveis de ambiente (serverless)
+  if (process.env.ML_ACCESS_TOKEN && process.env.ML_REFRESH_TOKEN) {
+    return {
+      access_token: process.env.ML_ACCESS_TOKEN,
+      refresh_token: process.env.ML_REFRESH_TOKEN,
+      expires_at: Date.now() + 21600000, // 6 horas
+    };
+  }
+  // Fallback para arquivo local
   try { return JSON.parse(readFileSync(TOKEN_FILE, 'utf-8')); }
   catch { return null; }
 }
